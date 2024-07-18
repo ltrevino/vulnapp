@@ -12,6 +12,9 @@ using System.Xml.Xsl;
 using System.Runtime.InteropServices;
 using System.Web;
 using VulnerableWebApplication.VLAModel;
+using System.Security.Claims;
+using GraphQL;
+
 
 
 namespace VulnerableWebApplication.VLAController
@@ -31,7 +34,22 @@ namespace VulnerableWebApplication.VLAController
             Retourne le contenu du fichier correspondant à la langue choisie par l'utilisateur
             */
             if (FileName.IsNullOrEmpty()) FileName = "francais";
-            while (FileName.Contains("../") || FileName.Contains("..\\")) FileName = FileName.Replace("../", "").Replace("..\\", "");
+            //while (FileName.Contains("../") || FileName.Contains("..\\")) FileName = FileName.Replace("../", "").Replace("..\\", "");
+
+
+            // Definir el directorio seguro donde se almacenan los archivos permitidos
+                string safeDirectory = Path.Combine(Directory.GetCurrentDirectory(), "");
+
+                // Validar y normalizar el nombre del archivo
+                FileName = Path.GetFileName(FileName); // Esto elimina cualquier ruta y solo deja el nombre del archivo
+
+                // Combinar el directorio seguro con el nombre del archivo
+                string filePath = Path.Combine(safeDirectory, FileName);
+
+                // if (!File.Exists(filePath))
+                // {
+                //     return Results.NotFound("File not found.");
+                // }
 
             return Results.Ok(File.ReadAllText(FileName));
         }
@@ -49,11 +67,23 @@ namespace VulnerableWebApplication.VLAController
             if (!File.Exists(ROFile)) File.Create(ROFile).Dispose();
             File.SetAttributes(ROFile, FileAttributes.ReadOnly);
 
-            JsonConvert.DeserializeObject<object>(Json, new JsonSerializerSettings() { TypeNameHandling = TypeNameHandling.All });            
+            //Se restringe la deserializacion solo a objetos permitidos
+            //JsonConvert.DeserializeObject<object>(Json, new JsonSerializerSettings() { TypeNameHandling = TypeNameHandling.All });            
             Employee NewEmployee = JsonConvert.DeserializeObject<Employee>(Json);
+            
+
+
 
             if (NewEmployee != null && !NewEmployee.Address.IsNullOrEmpty() && !NewEmployee.Id.IsNullOrEmpty()) 
             {
+
+                //Se evalua si el contenido es seguro
+                 if (!Regex.IsMatch(NewEmployee.Id, @"^[a-zA-Z0-9\-]+$") || !Regex.IsMatch(NewEmployee.Address, @"^[a-zA-Z0-9\-]+$"))
+                    {
+                        return Results.Unauthorized();
+                    }
+
+
                 HaveToBeEmpty = VulnerableBuffer(NewEmployee.Address);
                 if (HaveToBeEmpty.IsNullOrEmpty())
                 {
@@ -110,7 +140,9 @@ namespace VulnerableWebApplication.VLAController
             /*
             Enregistre la chaine de caractères passée en paramètre dans le fichier de journalisation
             */
-            if (Str.Contains("script", StringComparison.OrdinalIgnoreCase)) Str = HttpUtility.HtmlEncode(Str);
+            //if (Str.Contains("script", StringComparison.OrdinalIgnoreCase)) Str = HttpUtility.HtmlEncode(Str);
+            
+            Str = HttpUtility.HtmlEncode(Str);
             if (!File.Exists(LogFile)) File.WriteAllText(LogFile, Data.GetLogPage());
             string Page = File.ReadAllText(LogFile).Replace("</body>", $"<p>{Str}</p><br>{Environment.NewLine}</body>");
             File.WriteAllText(LogFile, Page);
@@ -122,29 +154,53 @@ namespace VulnerableWebApplication.VLAController
             Effectue une requête web sur la boucle locale
             */
             if (Uri.IsNullOrEmpty()) Uri = "https://localhost:3000/";
-            if (Regex.IsMatch(Uri, @"^https://localhost"))
-            {
-                using HttpClient Client = new();
-                Client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
-
-                var Resp = await exec(Client, Uri);
-                static async Task<string> exec(HttpClient client, string uri)
+            
+                var allowedUris = new List<string>
                 {
-                    var Result = client.GetAsync(uri);
-                    Result.Result.EnsureSuccessStatusCode();
-                    return Result.Result.StatusCode.ToString();
-                }
-                return Results.Ok(Resp);
-            }
-            else return Results.Unauthorized();
+                    "http://google.com/",   
+                    // Puedes agregar más URIs permitidas aquí
+                };
+
+
+                if (allowedUris.Contains(Uri))
+                    {
+                        using HttpClient Client = new();
+                        Client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
+
+                        var Resp = await exec(Client, Uri);
+                        static async Task<string> exec(HttpClient client, string uri)
+                        {
+                            var Result = client.GetAsync(uri);
+                            Result.Result.EnsureSuccessStatusCode();
+                            return Result.Result.StatusCode.ToString();
+                        }
+                        return Results.Ok(Resp);
+                    }
+                    else
+                    {
+                            return Results.Unauthorized();
+                    }
+            
+            
         }
 
-        public static object VulnerableObjectReference(string Id)
+        public static object VulnerableObjectReference(string Id,  HttpContext context)
         {
             /*
             Retourne les informations liées à l'ID de l'utilisateur
             Permets aux employés de consulter leurs données personnelles
             */
+
+
+              // Obtener el ID del usuario autenticado del token JWT
+                string authenticatedUserId = context.Items["UserId"] as string;
+                if ( authenticatedUserId != "root")
+                {
+                    // El usuario no está autenticado o no tiene permiso para ver estos datos
+                    return Results.Unauthorized();
+                }
+
+
             var Employee = Data.GetEmployees()?.Where(x => Id == x.Id)?.FirstOrDefault();
 
             return Results.Ok(Newtonsoft.Json.JsonConvert.SerializeObject(Employee));
@@ -158,18 +214,32 @@ namespace VulnerableWebApplication.VLAController
             if (Regex.Match(UserStr, @"^(?:[a-zA-Z0-9_\-]+\.)+[a-zA-Z]{2,}(?:.{0,100})$").Success)
             {
                 Process Cmd = new Process();
-                Cmd.StartInfo.FileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "powershell" : "/bin/sh";
+                
+                // Cmd.StartInfo.FileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "powershell" : "/bin/sh";
+                // Cmd.StartInfo.RedirectStandardInput = true;
+                // Cmd.StartInfo.RedirectStandardOutput = true;
+                // Cmd.StartInfo.CreateNoWindow = true;
+                // Cmd.StartInfo.UseShellExecute = false;
+                // Cmd.Start();
+                // Cmd.WaitForExit(200);
+                // Cmd.StandardInput.WriteLine("nslookup " + UserStr);
+                // Cmd.StandardInput.Flush();
+                // Cmd.StandardInput.Close();
+
+                Cmd.StartInfo.FileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "nslookup" : "nslookup";
+                Cmd.StartInfo.Arguments = UserStr;
                 Cmd.StartInfo.RedirectStandardInput = true;
                 Cmd.StartInfo.RedirectStandardOutput = true;
                 Cmd.StartInfo.CreateNoWindow = true;
                 Cmd.StartInfo.UseShellExecute = false;
                 Cmd.Start();
                 Cmd.WaitForExit(200);
-                Cmd.StandardInput.WriteLine("nslookup " + UserStr);
-                Cmd.StandardInput.Flush();
-                Cmd.StandardInput.Close();
 
-                return Results.Ok(Cmd.StandardOutput.ReadToEnd());
+        string output = Cmd.StandardOutput.ReadToEnd();
+        Cmd.Close();
+
+                //return Results.Ok(Cmd.StandardOutput.ReadToEnd());
+                return Results.Ok(output);
             }
             else return Results.Unauthorized();
         }

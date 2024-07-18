@@ -3,6 +3,11 @@ using VulnerableWebApplication.VLAIdentity;
 using VulnerableWebApplication;
 using Microsoft.IdentityModel.Tokens;
 
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+using System.Security.Claims;
+using System.Text;
+
 namespace VulnerableWebApplication.MidlWare
 {
     public class XRealIPMiddleware
@@ -52,12 +57,41 @@ namespace VulnerableWebApplication.MidlWare
             }
 
             string authHeader = context.Request.Headers["Authorization"];
+
             if (authHeader.IsNullOrEmpty() || !VLAIdentity.VLAIdentity.VulnerableValidateToken(authHeader, configuration["Secret"]))
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 return;
             }
+
+
+            //Se agrega el userid
+            string token = authHeader.Substring("Bearer ".Length).Trim();
+            var userId = ValidateToken(token);
+
+            // Adjuntar el ID del usuario al contexto
+            context.Items["UserId"] = userId;
+            //FIN CORRECCION
             await _next(context);
+        }
+
+        //ACCESO TOKEN Y VALIDACION LATR
+        private string ValidateToken(string token)
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            try
+            {
+                var jwtToken = tokenHandler.ReadJwtToken(token);
+
+                                                System.Console.Write("=========");
+
+                var userId = jwtToken.Claims.First(x => x.Type == "Id").Value;
+                return userId;
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 

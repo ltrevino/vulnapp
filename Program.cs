@@ -73,7 +73,7 @@ app.MapGet("/Contract", async (string i) => await Task.FromResult(VLAController.
 
 app.MapGet("/LocalWebQuery", async (string? i) => await VLAController.VulnerableWebRequest(i)).WithOpenApi();
 
-app.MapGet("/Employee", async (string i) => await Task.FromResult(VLAController.VulnerableObjectReference(i))).WithOpenApi();
+app.MapGet("/Employee", async (string i, HttpContext context) => await Task.FromResult(VLAController.VulnerableObjectReference(i, context))).WithOpenApi();
 
 app.MapGet("/NewEmployee", async (string i) => await Task.FromResult(VLAController.VulnerableDeserialize(HttpUtility.UrlDecode(i)))).WithOpenApi();
 

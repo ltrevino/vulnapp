@@ -39,8 +39,15 @@ namespace VulnerableWebApplication.VLAIdentity
 
             VLAController.VLAController.VulnerableLogs("login attempt for:\n" + User + "\n" + Passwd + "\n", LogFile);
             var DataSet = VLAModel.Data.GetDataSet();
-            var Result = DataSet.Tables[0].Select("Passwd = '" + Hash + "' and User = '" + User + "'");
 
+            // Escapando valores para evitar inyección SQL - SOLUCION 1
+            string escapedUser = User.Replace("'", "''");
+            string escapedHash = Hash.Replace("'", "''");
+
+            // var Result = DataSet.Tables[0].Select("Passwd = '" + Hash + "' and User = '" + User + "'");
+            var Result = DataSet.Tables[0].Select("Passwd = '" + escapedHash + "' and User = '" + escapedUser + "'");
+
+       
             return Result.Length > 0 ? Results.Ok(VulnerableGenerateToken(User)) : Results.Unauthorized();
         }
 
